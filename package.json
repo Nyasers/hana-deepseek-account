@@ -1,6 +1,6 @@
 {
   "name": "hana-deepseek-account",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "用 DeepSeek 帐号登录，为 Hana 提供原生模型路由",

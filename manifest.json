@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "hana-deepseek-account",
   "name": "Hana DeepSeek Account",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "用 DeepSeek 帐号登录，为 Hana 提供原生模型路由",
   "entry": "bin/index.mjs",
   "icon": "icon.svg",
