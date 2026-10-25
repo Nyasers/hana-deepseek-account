@@ -26,7 +26,7 @@ pnpm run release        # build + pack，产物落 releases/
 
 许可证是 MPL-2.0（见 `LICENSE`，随包分发），SPDX 标识也写进 entry 的 `license` 字段。
 
-早期的「无构建步骤、把 SDK 解包成 `sdk/` 塞进包」写法已废除：那份手抄快照会随宿主升级静默漂移（实测已落后，缺 `media:generate-speech`），且把一个构建期依赖变成了源码树的一部分。
+不把 SDK 解包成 `sdk/` 塞进包：那份手抄快照会随宿主升级静默漂移（实测已落后，缺 `media:generate-speech`），且把一个构建期依赖变成了源码树的一部分。
 
 ---
 
@@ -76,7 +76,7 @@ pnpm run release        # build + pack，产物落 releases/
 | --- | --- |
 | `validate_app.mjs --dir --json` | `{"ok":true,"issues":[],"summary":{"errors":0,"warnings":0}}`，exit 0 |
 | `validate_app.mjs --archive --json` | `{"ok":true,"issues":[],"summary":{"errors":0,"warnings":0}}`，exit 0 |
-| `pack_app.mjs`（已弃用） | 早期用宿主打包器产出 `dist-extensions/`；现改为自建 `scripts/pack.mjs` → `releases/` |
+| `scripts/pack.mjs` 取代宿主打包器 | 宿主那套 `pack_app.mjs` 产出 `dist-extensions/`；本项目用自建脚本 → `releases/` |
 | `auth_init` 真实探针 | HTTP 200，`code=0 / biz_code=0`，拿到 `authorize_url`；**`x-client-version: "0.1.0"` 被平台接受** |
 | 假 token 打 `/v1/messages` | HTTP 401，`{"error":{"message":"Authentication Fails (invalid dsh token) ...","type":"authentication_error",...}}` |
 | `oauth-callback.mjs` 独立起得来 | `node bin/oauth-callback.mjs <port>`，stdout 精确输出 `DEEPSEEK_OAUTH_READY` |
@@ -258,12 +258,17 @@ zip 内含 6 个文件：`manifest.json` / `icon.svg` / `LICENSE`，以及 `bin/
 
 - 只在 Windows 上验过。Windows 上 `scoped` 不可用；`native` 需要一次性管理员初始化（见 §3.1），未初始化时 `runtime.start` 直接失败（真宿主实测）。
 - 因此 App 用 `profile: "local-machine"`：不需要管理员初始化，但该受管进程以当前用户身份运行、没有文件系统隔离（`enforcement: "none"`）。
-- **回调端口必须现问系统要**：早期硬编码 `53692–53696`，而本机这五个端口全在 Windows 保留段里（`bind` 返 `EACCES`），导致回调服务从未起过。现改为子进程探针 `bind(0)`。
+- **回调端口必须现问系统要**：`53692–53696` 在本机全落在 Windows 保留段里（`bind` 返 `EACCES`），写死端口会让回调服务起不来。所以用子进程探针 `bind(0)` 现要一个。
 - 回调服务起不来时**降级**为宿主原生的「粘贴回调 URL」路径，登录不会因此直接失败。
-- **设置页可能误报「配置不完整」**（登录后出现、点一下删除提供商就恢复）：那是宿主的缺陷，
-  `/providers/summary` 取模型走 `getAllProvidersRaw()`，而它只合 `provider-catalog.json` 与本地 provider 插件，
-  不包含 App provider；而另一个入口 `getChatModelEntries` 是认 App provider 的。两条取值路径不一致。
+- **设置页的 provider 摘要看不到本 App**：`/providers/summary` 的遍历集合是 `getAllProvidersRaw()`，
+  而它来自配置文件（`provider-catalog` / `auth-storage`），**不包含 App provider**；App provider 的元数据
+  握在 `ctx.providers.register()` 那一侧。对比 `getChatModelEntries()` 走
+  `getChatModelSelection()` → `resolveChatProvider()`，是能解析到 App provider 的。
+  所以同一个 provider 在聊天模型选择器里可选，在摘要页里不可见。
 - **provider 图标显示为占位方块**：宿主前端把 `provider → SVG` 的映射硬编码在
   `ActionFeedbackIcons-*.js` 里，按 provider id 精确匹配；我们的 id 是
   `app:hana-deepseek-account:deepseek-account`，匹配不上。而 App provider descriptor 的字段白名单
   （`id/name/models/auth/refreshModels/filterModels/fetchDeferred/cancelDeferred`）没有图标位。
+  白名单是**硬拒**：`validateAppProviderDescriptorV2()` 遇到未知字段直接抛
+  `Unknown App provider descriptor field: <key>`，`icon` / `iconUrl` / `iconSvg` 实测全部被拒。
+  同一份 descriptor 里模型层（`AppProviderModelV2`）反而有索引签名、允许自定义字段，两层严格度不一致。
