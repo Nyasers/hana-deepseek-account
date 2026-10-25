@@ -1,0 +1,172 @@
+# Release — push tag v* 出包并发布
+#
+# 三段式（骨架对齐 DSHana 的 release.yml，按本项目裁剪）：
+#   create-release：先建 draft，保证后续上传目标必然存在（已存在则跳过）
+#   package：构建 + 打包 + 自检，直传自己那两个件到 release
+#   publish：硬校验必需资产，齐了才去 draft；缺一个就 fail 并留 draft 供人工检查
+#
+# 与 DSHana 的差异：本项目产物与平台无关（纯 JS + node: 内建），所以没有平台矩阵，
+# 一个 ubuntu runner 出包即可；也没有 universal/target 之分。
+#
+# 产物命名：`<id>-v<version>.zip` + `app-<id>-<version>.entry.json`，
+# version 取自 manifest.json，build 时会与 vendor 里的 SDK packedVersion 对齐 minAppVersion。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # 建 draft：上传完并校验通过后才由 publish 去掉 draft。
+      # tag 名经 env 传入，不在 shell 里裸插值 ${{ }}（见文件末尾「注入防护」）。
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping create"
+          else
+            gh release create "$TAG" \
+              --draft \
+              --title "$TAG" \
+              --generate-notes
+          fi
+
+  package:
+    needs: create-release
+    # create-release 只在 tag 场景跑，dispatch 时被 skip。job 的 if 不带状态函数时
+    # GitHub 会隐式前置 success()，而 success() 在上游被 skip 时为假 —— 用 !cancelled() 顶掉它。
+    if: ${{ !cancelled() && needs.create-release.result != 'failure' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and pack
+        run: pnpm run release
+
+      # 发版前把版本号对一遍：tag 是 v<version>，必须与 manifest 一致，
+      # 否则会发一个「tag 说 0.2.0、包里写 0.1.0」的包。
+      - name: Verify tag matches manifest version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          VER="${TAG#v}"
+          MANIFEST_VER=$(node -e 'console.log(require("./manifest.json").version)')
+          echo "tag=$VER manifest=$MANIFEST_VER"
+          [ "$VER" = "$MANIFEST_VER" ] || {
+            echo "::error::tag ($VER) 与 manifest.json version ($MANIFEST_VER) 不一致"
+            exit 1
+          }
+
+      # 产物自检：与 CI 同一套判据（zip 根级有 manifest、代码在 bin/、entry 与 zip 一致）。
+      - name: Verify package
+        run: |
+          set -e
+          ZIP=$(ls releases/*.zip | head -n1)
+          ENTRY=$(ls releases/app-*.entry.json | head -n1)
+          unzip -l "$ZIP" | grep -qE ' manifest\.json$' || { echo "::error::zip 根级没有 manifest.json"; exit 1; }
+          unzip -l "$ZIP" | grep -qE ' bin/index\.mjs$'    || { echo "::error::zip 缺 bin/index.mjs"; exit 1; }
+          node -e '
+            const fs = require("node:fs");
+            const crypto = require("node:crypto");
+            const zipPath = fs.readdirSync("releases").filter((f) => f.endsWith(".zip")).map((f) => "releases/" + f)[0];
+            const entryPath = fs.readdirSync("releases").filter((f) => f.endsWith(".entry.json")).map((f) => "releases/" + f)[0];
+            const bytes = fs.readFileSync(zipPath);
+            const sha = crypto.createHash("sha256").update(bytes).digest("hex");
+            const entry = JSON.parse(fs.readFileSync(entryPath, "utf8"));
+            if (entry.archive.sha256 !== sha || entry.archive.size !== bytes.length) {
+              console.error("::error::entry 与 zip 不一致");
+              process.exit(1);
+            }
+            console.log("entry 与 zip 一致：" + sha);
+          '
+
+      # 分支上的 dispatch 没有 release 可写，产物以 artifact 留 7 天供人工取用。
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          name: package
+          retention-days: 7
+          path: |
+            releases/*.zip
+            releases/app-*.entry.json
+          if-no-files-found: error
+
+      # tag 场景直传 release：本作业只写自己那两个件，--clobber 幂等。
+      - name: Upload release assets
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          gh release upload "$TAG" releases/*.zip releases/app-*.entry.json --clobber
+
+  # 收口：必需资产齐备才去 draft。任一环失败则本 job 不执行，release 留在 draft。
+  # 本作业没有 checkout，所以每个 gh 调用都要用 -R 显式给仓库。
+  publish:
+    needs: [package]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Verify required assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          VER="${TAG#v}"
+          ASSETS=$(gh release view "$TAG" -R "$REPO" --json assets --jq '.assets[].name')
+          echo "=== release assets ==="; echo "$ASSETS"; echo ""
+
+          REQUIRED="hana-deepseek-account-v${VER}.zip app-hana-deepseek-account-${VER}.entry.json"
+          MISSING=()
+          for f in $REQUIRED; do
+            echo "$ASSETS" | grep -qx "$f" || MISSING+=("$f")
+          done
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::缺少必需资产：${MISSING[*]}"
+            echo "release 保持 draft 供人工检查"
+            exit 1
+          fi
+          echo "✓ 全部必需资产齐备"
+
+      - name: Un-draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: gh release edit "$TAG" -R "$REPO" --draft=false
+
+# 注入防护：run 块内不裸插值 ${{ github.* }}。GitHub 在 shell 解析**之前**展开表达式，
+# tag 里一个 " 加 ; 就能越出引号执行命令（CWE-78）。凡进 shell 的上下文字段
+# 一律先经步骤级 env 落成 shell 变量再引用。

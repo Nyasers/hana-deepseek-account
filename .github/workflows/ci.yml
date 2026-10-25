@@ -1,0 +1,117 @@
+# CI — 构建 + 归档校验，每次 push 与 PR 都跑
+#
+# 这个项目的产物与平台无关（纯 JS + node: 内建），所以不需要矩阵：一个 runner 出包就够。
+# 校验器用的是宿主自带的那套（validate-app.mjs），但 CI 里没有宿主安装目录，
+# 所以这里跑的是 pack 自带的断言（交付件齐备、无裸包名、无残留构建机路径、暂存树无杂项）。
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新提交取消上一轮还在跑的检查：构建是幂等的，没必要排队烧分钟数。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # 钉版本而不是 ubuntu-latest：镜像换代是 GitHub 侧的静默变化，
+    # 验收链路要的是可复现的地基。
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm 版本由 package.json 的 packageManager 决定（corepack 读它）。
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 构建与打包用 node:zlib 的 crc32（Node 20.15+ 才有）与 node --permission（21+）。
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # SDK 快照必须与之一致：vendor 里的 tgz 是构建期依赖，漂了会让产物与声明不符。
+      - name: Verify vendored SDK
+        run: |
+          set -e
+          node -e '
+            const j = require("./vendor/hana-app-sdk/source-manifest.json");
+            if (typeof j.packedVersion !== "string" || !j.packedVersion) {
+              console.error("::error::vendor/hana-app-sdk/source-manifest.json 缺 packedVersion");
+              process.exit(1);
+            }
+            console.log("vendored SDK packedVersion = " + j.packedVersion);
+          '
+          test -f vendor/hana-app-sdk/hana-app-sdk.tgz
+
+      # build + pack。pack 自带的断言会挡住：缺交付件、入口残留裸包名、
+      # 入口残留构建机绝对路径、暂存树里混进清单外的文件。
+      # CI 里没有 HANA_APP_TOOLS_ROOT，归档校验那一步会跳过并明确告警——这是预期。
+      - name: Build and pack
+        run: pnpm run release
+
+      # 产物自检：zip 必须在，且 manifest 得能在 zip 根级读到（宿主就是在这儿找它的）。
+      - name: Verify package layout
+        run: |
+          set -e
+          ZIP=$(ls releases/*.zip | head -n1)
+          ENTRY=$(ls releases/app-*.entry.json | head -n1)
+          echo "zip   = $ZIP"
+          echo "entry = $ENTRY"
+
+          test -s "$ZIP"
+          test -s "$ENTRY"
+
+          # zip 根级必须有 manifest.json，不能套一层目录。
+          if ! unzip -l "$ZIP" | grep -qE ' manifest\.json$'; then
+            echo "::error::$ZIP 根级没有 manifest.json"
+            exit 1
+          fi
+          # 代码应在 bin/ 下（与 DSHana 同形）。
+          if ! unzip -l "$ZIP" | grep -qE ' bin/index\.mjs$'; then
+            echo "::error::$ZIP 缺 bin/index.mjs"
+            exit 1
+          fi
+
+          # entry 里的 sha256 / size 必须与刚落盘的 zip 对得上，否则发布出去的是坏引用。
+          node -e '
+            const fs = require("node:fs");
+            const crypto = require("node:crypto");
+            const zipPath = fs.readdirSync("releases").filter((f) => f.endsWith(".zip")).map((f) => "releases/" + f)[0];
+            const entryPath = fs.readdirSync("releases").filter((f) => f.endsWith(".entry.json")).map((f) => "releases/" + f)[0];
+            const bytes = fs.readFileSync(zipPath);
+            const sha = crypto.createHash("sha256").update(bytes).digest("hex");
+            const entry = JSON.parse(fs.readFileSync(entryPath, "utf8"));
+            if (entry.archive.sha256 !== sha) {
+              console.error("::error::entry.archive.sha256 与 zip 实际值不符");
+              process.exit(1);
+            }
+            if (entry.archive.size !== bytes.length) {
+              console.error("::error::entry.archive.size 与 zip 实际字节数不符");
+              process.exit(1);
+            }
+            if (!entry.archive.url.endsWith("/" + zipPath.split("/").pop())) {
+              console.error("::error::entry.archive.url 指向的文件名与产出的 zip 不一致");
+              process.exit(1);
+            }
+            console.log("entry 与 zip 一致：" + sha);
+          '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          # 保留 14 天够一次发版周期；要长期留存就去 Release。
+          retention-days: 14
+          path: |
+            releases/*.zip
+            releases/app-*.entry.json
+          if-no-files-found: error

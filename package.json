@@ -6,6 +6,9 @@
   "description": "用 DeepSeek 帐号登录，为 Hana 提供原生模型路由",
   "license": "MPL-2.0",
   "author": "Nyasers",
+  "engines": {
+    "node": ">=22.2.0"
+  },
   "scripts": {
     "build": "node build.mjs",
     "pack": "node scripts/pack.mjs",
