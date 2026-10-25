@@ -1,0 +1,12 @@
+# 统一按 LF 存储与检出。
+#
+# 不设这条时：仓库里存的是 LF，但 core.autocrlf=true 会在 Windows 检出时转成 CRLF，
+# 于是「本地构建」与「CI 构建」的产物字节不一致（实测 icon.svg 差 58 字节 = 58 个换行）。
+# 字节不一致不影响安装（宿主读 JSON/XML，不是字节），但它让「同一 commit 的产物 SHA256 可复现」
+# 这条保证失效——而那正是发布前交叉验证 entry 与 zip 的依据。
+* text=auto eol=lf
+
+# 二进制资产不做任何转换（显式声明，避免 text=auto 误判）。
+*.tgz binary
+*.png binary
+*.zip binary
