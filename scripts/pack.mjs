@@ -272,18 +272,12 @@ async function loadIcon() {
   return { icon: `data:image/png;base64,${bytes.toString("base64")}` };
 }
 
-// archive.url 的下载前缀：默认留 `{{BASE_URL}}` 占位（官方目录按该占位替换成自己的 CDN 前缀）。
-// 直接发 GitHub Release 时用 `--base-url` 或环境变量换成真实地址，entry 就是可装的。
-//
-//   本地：  node scripts/pack.mjs
-//   Release：--base-url https://github.com/<owner>/<repo>/releases/download/v<version>
-const BASE_URL =
-  (() => {
-    const i = argv.indexOf("--base-url");
-    if (i >= 0 && argv[i + 1]) return argv[i + 1].replace(/\/+$/, "");
-    const env = process.env.PACK_BASE_URL;
-    return typeof env === "string" && env ? env.replace(/\/+$/, "") : "{{BASE_URL}}";
-  })();
+// archive.url 恒为 `{{BASE_URL}}/<zip 名>`。这是市场协议的硬要求，不是可选写法：
+// 同步器靠 `{{BASE_URL}}/` 前缀取出 zip 资产名、再去 Release 资产里找同名文件
+// （`assetFileName()` 只认这个前缀，否则抛 “entry archive.url must name a local {{BASE_URL}} ZIP asset”），
+// 取到实例后再把整串换成真实的 browser_download_url 写进 index.v2.json。
+// 所以这里刻意不提供覆盖参数：填绝对地址会让投稿在校验阶段直接失败。
+const BASE_URL = "{{BASE_URL}}";
 
 const { icon, reason } = await loadIcon();
 const license = typeof PKG.license === "string" && PKG.license ? PKG.license : undefined;

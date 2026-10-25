@@ -67,10 +67,6 @@ jobs:
 
       - name: Build and pack
         run: pnpm run release
-        env:
-          # entry 里的下载地址直指本次 Release 的资产（否则会留 {{BASE_URL}} 占位，
-          # 而 GitHub Release 场景下没人替它替换）。tag 名经 env 传入，不裸插值。
-          PACK_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
 
       # 发版前把版本号对一遍：tag 是 v<version>，必须与 manifest 一致，
       # 否则会发一个「tag 说 0.2.0、包里写 0.1.0」的包。
