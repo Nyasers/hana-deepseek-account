@@ -24,7 +24,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 建 draft：上传完并校验通过后才由 publish 去掉 draft。
       # tag 名经 env 传入，不在 shell 里裸插值 ${{ }}（见文件末尾「注入防护」）。
@@ -53,11 +53,11 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -107,7 +107,7 @@ jobs:
           '
 
       # 分支上的 dispatch 没有 release 可写，产物以 artifact 留 7 天供人工取用。
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         with:
           name: package

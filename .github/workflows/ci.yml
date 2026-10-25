@@ -25,12 +25,12 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # pnpm 版本由 package.json 的 packageManager 决定（corepack 读它）。
       - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # 构建与打包用 node:zlib 的 crc32（Node 20.15+ 才有）与 node --permission（21+）。
           node-version: 22
@@ -106,7 +106,7 @@ jobs:
             console.log("entry 与 zip 一致：" + sha);
           '
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: package
           # 保留 14 天够一次发版周期；要长期留存就去 Release。
