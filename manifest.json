@@ -1,0 +1,100 @@
+{
+  "manifestVersion": 2,
+  "id": "hana-deepseek-account",
+  "name": "Hana DeepSeek Account",
+  "version": "0.1.0",
+  "description": "用 DeepSeek 帐号登录，为 Hana 提供原生模型路由",
+  "entry": "bin/index.mjs",
+  "icon": "icon.svg",
+  "minAppVersion": "1.1.111-beta",
+  "capabilities": [
+    "app/provider.provide",
+    "app/provider.auth",
+    "app/runtime.execute",
+    "app/runtime.local-machine",
+    "app/runtime.network",
+    "app/process.spawn"
+  ],
+  "network": {
+    "allowedHosts": [
+      "platform.deepseek.com",
+      "api.deepseek.com"
+    ],
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "allowLocalhost": true,
+    "defaultTimeoutMs": 120000,
+    "maxResponseBytes": 16777216
+  },
+  "contributes": {
+    "nativeProviders": [
+      {
+        "id": "deepseek-account",
+        "refreshModels": true,
+        "name": "DeepSeek Account",
+        "auth": {
+          "oauth": {
+            "name": "DeepSeek",
+            "isSubscription": true,
+            "loginLabel": "登录 DeepSeek 帐号"
+          }
+        },
+        "models": [
+          {
+            "id": "deepseek-flash",
+            "name": "DeepSeek-V4.1-Flash",
+            "api": "deepseek-account-messages",
+            "baseUrl": "https://api.deepseek.com/anthropic",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "contextWindow": 1048576,
+            "maxTokens": 393216,
+            "thinkingLevels": [
+              "off",
+              "low",
+              "high",
+              "max"
+            ],
+            "defaultThinkingLevel": "high",
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            }
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "name": "DeepSeek-V4-Pro",
+            "api": "deepseek-account-messages",
+            "baseUrl": "https://api.deepseek.com/anthropic",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 1048576,
+            "maxTokens": 393216,
+            "thinkingLevels": [
+              "off",
+              "low",
+              "high",
+              "max"
+            ],
+            "defaultThinkingLevel": "high",
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

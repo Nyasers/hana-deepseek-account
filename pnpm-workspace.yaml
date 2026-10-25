@@ -1,0 +1,5 @@
+# 本 App 自成 workspace 根：没有它，pnpm 会向上找到上层目录，把依赖装到外面去。
+# allowBuilds：esbuild 需要跑安装脚本落地二进制，pnpm 默认拦下（ES_PNPM_IGNORED_BUILDS）。
+packages: []
+allowBuilds:
+  esbuild: true

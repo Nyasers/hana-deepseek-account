@@ -1,0 +1,21 @@
+# 依赖与构建产物
+node_modules/
+dist/
+releases/
+dist-extensions/
+.pnpm-store/
+.tmp/
+.cache/
+
+# 系统杂项
+*.log
+.DS_Store
+Thumbs.db
+
+# 本地临时 / 备份
+*.bak
+*.old
+
+# 规划与排障笔记：随仓库之外的本地工作档，不随源码提交
+SPEC.md
+STATUS.md

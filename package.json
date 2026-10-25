@@ -1,0 +1,21 @@
+{
+  "name": "hana-deepseek-account",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "用 DeepSeek 帐号登录，为 Hana 提供原生模型路由",
+  "license": "MPL-2.0",
+  "author": "Nyasers",
+  "scripts": {
+    "build": "node build.mjs",
+    "pack": "node scripts/pack.mjs",
+    "release": "node build.mjs && node scripts/pack.mjs",
+    "check": "node scripts/pack.mjs --check",
+    "icon": "node scripts/make-icon-png.mjs",
+    "sync:vendor:sdk": "node scripts/sync-vendor-sdk.mjs"
+  },
+  "devDependencies": {
+    "@hana/app-sdk": "file:vendor/hana-app-sdk/hana-app-sdk.tgz",
+    "esbuild": "^0.28.2"
+  }
+}
