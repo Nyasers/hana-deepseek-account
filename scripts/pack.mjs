@@ -272,6 +272,19 @@ async function loadIcon() {
   return { icon: `data:image/png;base64,${bytes.toString("base64")}` };
 }
 
+// archive.url 的下载前缀：默认留 `{{BASE_URL}}` 占位（官方目录按该占位替换成自己的 CDN 前缀）。
+// 直接发 GitHub Release 时用 `--base-url` 或环境变量换成真实地址，entry 就是可装的。
+//
+//   本地：  node scripts/pack.mjs
+//   Release：--base-url https://github.com/<owner>/<repo>/releases/download/v<version>
+const BASE_URL =
+  (() => {
+    const i = argv.indexOf("--base-url");
+    if (i >= 0 && argv[i + 1]) return argv[i + 1].replace(/\/+$/, "");
+    const env = process.env.PACK_BASE_URL;
+    return typeof env === "string" && env ? env.replace(/\/+$/, "") : "{{BASE_URL}}";
+  })();
+
 const { icon, reason } = await loadIcon();
 const license = typeof PKG.license === "string" && PKG.license ? PKG.license : undefined;
 if (!license) console.warn("[pack] package.json 缺 license：entry 里不写 SPDX 标识");
@@ -289,7 +302,7 @@ if (license) entry.license = license;
 if (icon) entry.icon = icon;
 else console.warn(`[pack] entry 里不带 icon（${reason}）`);
 entry.archive = {
-  url: "{{BASE_URL}}/" + ZIP_NAME,
+  url: BASE_URL + "/" + ZIP_NAME,
   sha256: sha,
   size: zip.length,
   format: "zip",
